@@ -36,7 +36,7 @@ docker build -t "$IMAGE" .
 # ---------------------------------------------
 # Clean existing CMake cache to ensure toolchain reload
 # ---------------------------------------------
-rm -rf build
+sudo rm -rf build
 
 # ---------------------------------------------
 # Function to build one preset
@@ -51,6 +51,7 @@ build_preset() {
              cmake --preset ${preset} ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} && \
              cmake --build --preset ${preset} -j"
   echo "✅ Done: ${preset}"
+  sudo chown -R "$(id -u):$(id -g)" build
 }
 
 # ---------------------------------------------
