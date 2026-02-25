@@ -27,6 +27,27 @@ KEY_Code_t gKeyReading1     = KEY_INVALID;
 uint16_t   gDebounceCounter = 0;
 bool       gWasFKeyPressed  = false;
 
+#ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
+// Number of consecutive KEYBOARD_Poll() calls that return the injected key.
+// Must exceed key_debounce_10ms (typically 2) to pass the debounce gate in app.c.
+// After HOLD polls the key is cleared, which triggers a natural release cycle.
+#define SERIAL_KEY_HOLD_POLLS 5
+
+volatile KEY_Code_t gKeyFromSerial      = KEY_INVALID;
+static   uint8_t    gSerialKeyHoldCount = 0;
+
+// Inject a key received from serial (UART or VCP).
+// keyCode is the raw packet byte; validated against KEY_Code_e range before use.
+// KEY_PTT is explicitly blocked — PTT release cannot be guaranteed over serial.
+void KEYBOARD_InjectKey(uint8_t keyCode)
+{
+    if (keyCode < KEY_INVALID && keyCode != KEY_PTT) {
+        gKeyFromSerial      = (KEY_Code_t)keyCode;
+        gSerialKeyHoldCount = 0;
+    }
+}
+#endif
+
 #define GPIOx               GPIOB
 #define PIN_MASK_COLS       (LL_GPIO_PIN_6 | LL_GPIO_PIN_5 | LL_GPIO_PIN_4 | LL_GPIO_PIN_3)
 #define PIN_COLS            GPIO_MAKE_PIN(GPIOx, PIN_MASK_COLS)
@@ -78,6 +99,21 @@ static const KEY_Code_t keyboard[5][4] = {
 
 KEY_Code_t KEYBOARD_Poll(void)
 {
+#ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
+    // Serial-injected key: hold it for SERIAL_KEY_HOLD_POLLS consecutive calls
+    // so the debounce counter in app.c has time to reach key_debounce_10ms.
+    // Once the hold count is exhausted we clear it — the next call returns
+    // KEY_INVALID, which triggers the release path in app.c naturally.
+    if (gKeyFromSerial != KEY_INVALID) {
+        KEY_Code_t injected = gKeyFromSerial;
+        if (++gSerialKeyHoldCount >= SERIAL_KEY_HOLD_POLLS) {
+            gKeyFromSerial      = KEY_INVALID;
+            gSerialKeyHoldCount = 0;
+        }
+        return injected;
+    }
+#endif
+
     KEY_Code_t Key = KEY_INVALID;
 
     // Scan all 5 columns - never break early to avoid GPIO state issues

@@ -22,7 +22,12 @@
 #include "py32f071_ll_dma.h"
 #include "py32f071_ll_gpio.h"
 #include "py32f071_ll_usart.h"
-#include "driver/uart.h"
+
+#ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
+#include "driver/keyboard.h"
+// Packet type for serial key injection (K5Viewer → radio)
+#define UART_TYPE_KEY 0x03
+#endif
 
 #define USARTx USART1
 #define DMA_CHANNEL LL_DMA_CHANNEL_2
@@ -149,12 +154,40 @@ void UART_LogSend(const void *pBuffer, uint32_t Size)
 
 #ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
     bool UART_IsCableConnected(void) {
+        bool connected = false;
+
         for (size_t i = 0; i < sizeof(UART_DMA_Buffer); i++) {
-            if (UART_DMA_Buffer[i] == 0x55) {
-                UART_DMA_Buffer[i] = 0x00;  // Clear only the matched byte
-                return true;
+            uint8_t b = UART_DMA_Buffer[i];
+
+            if (b == 0x55) {
+                // Keepalive byte — viewer is alive
+                UART_DMA_Buffer[i] = 0x00;
+                connected = true;
+            }
+            else if (b == 0xAA) {
+                // Possible start of a key packet: 0xAA 0x55 0x03 <keycode>
+                // Check if the next 3 bytes are available and match
+                size_t i1 = (i + 1) % sizeof(UART_DMA_Buffer);
+                size_t i2 = (i + 2) % sizeof(UART_DMA_Buffer);
+                size_t i3 = (i + 3) % sizeof(UART_DMA_Buffer);
+
+                if (UART_DMA_Buffer[i1] == 0x55 &&
+                    UART_DMA_Buffer[i2] == UART_TYPE_KEY)
+                {
+                    uint8_t keyCode = UART_DMA_Buffer[i3];
+
+                    // Consume all 4 bytes
+                    UART_DMA_Buffer[i]  = 0x00;
+                    UART_DMA_Buffer[i1] = 0x00;
+                    UART_DMA_Buffer[i2] = 0x00;
+                    UART_DMA_Buffer[i3] = 0x00;
+
+                    KEYBOARD_InjectKey(keyCode);
+                    connected = true;
+                }
             }
         }
-        return false;
+
+        return connected;
     }
 #endif
