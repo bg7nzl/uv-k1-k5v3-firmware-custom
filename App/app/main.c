@@ -75,9 +75,10 @@ static void toggle_chan_scanlist(void)
     if(att->exclude == true)
     {
         att->exclude = false;
-        return;
+        MR_SaveChannelAttributesToFlash(gTxVfo->CHANNEL_SAVE, att);
     } 
-
+    else 
+    {
         uint8_t scanlist = gTxVfo->SCANLIST_PARTICIPATION;
 
         scanlist++;
@@ -88,6 +89,7 @@ static void toggle_chan_scanlist(void)
         gTxVfo->SCANLIST_PARTICIPATION = scanlist;
 
         SETTINGS_UpdateChannel(gTxVfo->CHANNEL_SAVE, gTxVfo, true, true, true);
+    }
 
     gVfoConfigureMode = VFO_CONFIGURE;
     gFlagResetVfos    = true;
@@ -483,27 +485,21 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             /* 01 .. MR_CHANNELS_LIST */
             if (value <= MR_CHANNELS_LIST)
             {
-                if (RADIO_CheckValidList(value))
+                gEeprom.SCAN_LIST_DEFAULT = value;
+
+                if (!RADIO_CheckValidList(value))
                 {
-                    /* Requested scan list is valid */
-            gEeprom.SCAN_LIST_DEFAULT = value;
+                    /* Requested scan list is empty or invalid:
+                        jump to the next valid scan list */
+                    gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+                    RADIO_NextValidList(1);
                 }
-                else
-            {
-                /* Requested scan list is empty or invalid:
-                    jump to the next valid scan list */
-                    gEeprom.SCAN_LIST_DEFAULT = value;
-                RADIO_NextValidList(1);
-            }
 
             #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
                 SETTINGS_WriteCurrentState();
             #endif
             }
 
-            gInputBoxIndex = 0;
-
-            gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
             return;
         }
 
@@ -763,6 +759,7 @@ static void MAIN_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
         }
         else {
             gScanKeepResult = false;
+            gInputBoxIndex = 0;
             CHFRSCANNER_Stop();
 
 #ifdef ENABLE_VOICE
